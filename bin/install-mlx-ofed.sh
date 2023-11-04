@@ -19,6 +19,7 @@ cleanup_image() {
 	$SUDO rm -rf /tmp/mlx
 }
 
+installed=false
 check_installed() {
   if ! $(which ofed_info) > /dev/null; then
     installed=false
@@ -33,7 +34,7 @@ set -o errexit
 set -o pipefail
 set -o nounset
 
-check_installed
+#check_installed
 
 if [[ $installed == true ]]; then
 	echo "MLX OFED is already installed"
