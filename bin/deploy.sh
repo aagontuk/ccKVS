@@ -1,4 +1,4 @@
-set -euo pipefail
+set -exuo pipefail
 
 # Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -6,6 +6,10 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 SRC_DIR=$SCRIPT_DIR/../src
 
 LOG_DIR=/tmp/cckvs-logs
+
+mkdir -p $LOG_DIR
+
+declare -A pids
 
 servers=(
 		"node-0"
@@ -19,17 +23,66 @@ servers=(
 		"node-8"
 )
 
+setup_all() {
+	for s in ${servers[@]}; do
+		echo "[$0] Installing OFED on $s"
+		ssh -t -o "StrictHostKeyChecking=no" $s "rm -rf /tmp/mlx; cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; ./install-mlx-ofed.sh" &> $LOG_DIR/${s}_ofed.log &
+		# Get pids
+		pids[$s]=$!
+	done
+	echo "pids: ${pids[@]}"
+
+	# Wait for all pids
+	for s in ${servers[@]}; do
+		echo "[$0] Waiting for $s"
+		wait ${pids[$s]}
+		echo "[$0] Done waiting for $s"
+	done
+
+	# Reboot all servers
+	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		echo "[$0] Rebooting $s"
+		ssh -t -o "StrictHostKeyChecking=no" $s "sudo reboot"
+	done
+
+	# Wait for all servers to come back up
+	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		echo "[$0] Waiting for $s to come back up"
+		while ! ssh -t -o "StrictHostKeyChecking=no" $s "echo 'Server is up'"; do
+			sleep 1
+		done
+		echo "[$0] $s is up"
+	done
+
+	# Configure infiniband
+	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		echo "[$0] Configuring infiniband on $s"
+		ssh -t -o "StrictHostKeyChecking=no" $s "cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; ./ib-config.sh"
+	done
+}
+
 build_cckvs() {
 	# Build CCKVS
 	echo "[$0] Building CCKVS"
 	cd $SRC_DIR
-	make clean
-	make
+	make clean &> /dev/null
+	make &> /dev/null
 }
 
 deploy() {
-	build_cckvs &> /dev/null
-	mkdir -p $LOG_DIR
+	build_cckvs
 
 	# Deploy CCKVS
 	for s in ${servers[@]}; do
@@ -52,6 +105,7 @@ usage() {
 	echo "Options:"
 	echo "  -d, --deploy		Deploy ccKVS"
 	echo "  -k, --kill		Kill all ccKVS processes"
+	echo "  -s, --setup		Setup all servers"
 	echo "  -h, --help		Display this help message"
 }
 
@@ -72,6 +126,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		-k|--kill)
 			kill_em_all
+			exit 0
+			;;
+		-s|--setup)
+			setup_all
 			exit 0
 			;;
 		-h|--help)
