@@ -9,7 +9,7 @@ SUDO=''
 install_mlx() {
 	mkdir /tmp/mlx
 	pushd /tmp/mlx
-	curl -L https://content.mellanox.com/ofed/MLNX_OFED-${MLX_OFED_VERSION}/MLNX_OFED_LINUX-${MLX_OFED_VERSION}-ubuntu20.04-x86_64.tgz | \
+	curl -L https://content.mellanox.com/ofed/MLNX_OFED-${MLX_OFED_VERSION}/MLNX_OFED_LINUX-${MLX_OFED_VERSION}-ubuntu18.04-x86_64.tgz | \
     		tar xz -C . --strip-components=2
 	$SUDO ./mlnxofedinstall --with-mft --vma --with-mstflint --auto-add-kernel-support --without-fw-update --dpdk --upstream-libs --force
 	popd
