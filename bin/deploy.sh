@@ -1,4 +1,4 @@
-set -exuo pipefail
+set -euo pipefail
 
 # Script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -25,6 +25,11 @@ servers=(
 
 setup_all() {
 	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		
 		echo "[$0] Installing OFED on $s"
 		ssh -t -o "StrictHostKeyChecking=no" $s "rm -rf /tmp/mlx; cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; ./install-mlx-ofed.sh" &> $LOG_DIR/${s}_ofed.log &
 		# Get pids
@@ -34,32 +39,24 @@ setup_all() {
 
 	# Wait for all pids
 	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		
 		echo "[$0] Waiting for $s"
 		wait ${pids[$s]}
 		echo "[$0] Done waiting for $s"
 	done
 
-	# Reboot all servers
+	# restart ib on all servers
 	for s in ${servers[@]}; do
 		# Skip this node
 		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
 			continue
 		fi
-		echo "[$0] Rebooting $s"
-		ssh -t -o "StrictHostKeyChecking=no" $s "sudo reboot"
-	done
-
-	# Wait for all servers to come back up
-	for s in ${servers[@]}; do
-		# Skip this node
-		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
-			continue
-		fi
-		echo "[$0] Waiting for $s to come back up"
-		while ! ssh -t -o "StrictHostKeyChecking=no" $s "echo 'Server is up'"; do
-			sleep 1
-		done
-		echo "[$0] $s is up"
+		echo "[$0] Restarting openibd on $s"
+		ssh -t -o "StrictHostKeyChecking=no" $s "sudo /etc/init.d/openibd restart"
 	done
 
 	# Configure infiniband
@@ -69,7 +66,7 @@ setup_all() {
 			continue
 		fi
 		echo "[$0] Configuring infiniband on $s"
-		ssh -t -o "StrictHostKeyChecking=no" $s "cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; ./ib-config.sh"
+		ssh -t -o "StrictHostKeyChecking=no" $s "cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; sudo ./ib-config.sh"
 	done
 }
 
