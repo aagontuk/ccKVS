@@ -32,7 +32,7 @@ setup_all() {
 			echo "[$0] Restarting openibd on $s"
 			sudo /etc/init.d/openibd restart
 			echo "[$0] Configuring infiniband on $s"
-			${SCRIPT_DIR}/ib-config.sh
+			sudo ${SCRIPT_DIR}/ib-config.sh
 			echo "[$0] Installing dependencies on $s"
 			${SCRIPT_DIR}/install-dependences.sh
 			continue
