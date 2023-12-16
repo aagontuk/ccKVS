@@ -4,7 +4,7 @@ sudo apt-get --yes --force-yes install \
    git make gcc numactl libnuma-dev \
    libmemcached-dev zlib1g-dev memcached \
    libmemcached-dev libmemcached-tools libpapi-dev \
-   libgsl-dev opensm infiniband-diags ibverb-utils perftest
+   libgsl-dev opensm infiniband-diags ibverbs-utils perftest
 
 
 pushd $HOME
