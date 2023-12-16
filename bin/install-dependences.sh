@@ -24,6 +24,6 @@ popd
 sudo add-apt-repository 'deb http://us.archive.ubuntu.com/ubuntu/ bionic main universe'
 sudo apt update
 sudo apt install -y gcc-6
-sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 50
+sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-7 50
 sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-6 40
 sudo update-alternatives --set gcc /usr/bin/gcc-6
