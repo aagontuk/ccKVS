@@ -7,21 +7,18 @@ sudo apt-get --yes --force-yes install \
    libgsl-dev opensm infiniband-diags ibverb-utils perftest
 
 
+pushd $HOME
 wget https://github.com/ivmai/libatomic_ops/releases/download/v7.4.6/libatomic_ops-7.4.6.tar.gz
-
 tar xzvf libatomic_ops-7.4.6.tar.gz
 
 cd libatomic_ops-7.4.6
-
 ./configure
-
 make
-
 sudo make install
 
 cd ..
-
 rm -rf libatomic_ops-7.4.6*
+popd
 
 # Install and activate gcc-6
 sudo add-apt-repository 'deb http://us.archive.ubuntu.com/ubuntu/ bionic main universe'

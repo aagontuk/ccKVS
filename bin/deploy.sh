@@ -27,6 +27,14 @@ setup_all() {
 	for s in ${servers[@]}; do
 		# Skip this node
 		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			echo "[$0] Installing OFED on $s"
+			rm -rf /tmp/mlx && ${SCRIPT_DIR}/install-mlx-ofed.sh
+			echo "[$0] Restarting openibd on $s"
+			sudo /etc/init.d/openibd restart
+			echo "[$0] Configuring infiniband on $s"
+			${SCRIPT_DIR}/ib-config.sh
+			echo "[$0] Installing dependencies on $s"
+			${SCRIPT_DIR}/install-dependences.sh
 			continue
 		fi
 		
@@ -68,6 +76,16 @@ setup_all() {
 		echo "[$0] Configuring infiniband on $s"
 		ssh -t -o "StrictHostKeyChecking=no" $s "cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; sudo ./ib-config.sh"
 	done
+	
+	# Installing dependencies
+	for s in ${servers[@]}; do
+		# Skip this node
+		if [[ $s == $(hostname | cut -d . -f 1) ]]; then
+			continue
+		fi
+		echo "[$0] Installing dependencies on $s"
+		ssh -t -o "StrictHostKeyChecking=no" $s "cd /proj/sandstorm-PG0/ashfaq/ccKVS/bin; sudo ./install-dependences.sh"
+	done
 }
 
 build_cckvs() {
@@ -84,7 +102,7 @@ deploy() {
 	# Deploy CCKVS
 	for s in ${servers[@]}; do
 		echo "[$0] Deploying ccKVS to $s"
-		ssh -t -o "StrictHostKeyChecking=no" $s "rm -rf ~/ccKVS; cp -r /proj/sandstorm-PG0/ashfaq/ccKVS ~/ccKVS; cd ccKVS/src/ccKVS/; ./run-ccKVS.sh" > $LOG_DIR/$s.log 2>&1 &
+		ssh -t -o "StrictHostKeyChecking=no" $s "rm -rf ~/ccKVS; cp -r /proj/sandstorm-PG0/ashfaq/ccKVS ~/ccKVS; cd ccKVS/src/ccKVS/; ./run-ccKVS.sh" > $LOG_DIR/${s}_cckvs.log 2>&1 &
 	done
 }
 
