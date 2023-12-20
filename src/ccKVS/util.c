@@ -77,6 +77,7 @@ void create_AHs(uint16_t clt_gid, struct hrd_ctrl_blk *cb)
                 clt_qp[i][qp_i] = hrd_get_published_qp(clt_name);
                 if(clt_qp[i][qp_i] == NULL)
                     usleep(200000);
+								printf("Got attributes for: %s\n", clt_name);
             }
             // printf("main:Client %d found clt %d. Client LID: %d\n",
             //        clt_gid, i, clt_qp[i][qp_i]->lid);
@@ -460,17 +461,25 @@ void dump_stats_2_file(struct stats* st){
 }
 
 int spawn_stats_thread() {
-    pthread_t *thread_arr = malloc(sizeof(pthread_t));
+    pthread_t *thread_arr = (pthread_t *)malloc(sizeof(pthread_t));
     pthread_attr_t attr;
     cpu_set_t cpus_stats;
     pthread_attr_init(&attr);
     CPU_ZERO(&cpus_stats);
     if(WORKERS_PER_MACHINE + CLIENTS_PER_MACHINE > 17)
-        CPU_SET(39, &cpus_stats);
+        CPU_SET(31, &cpus_stats);
     else
         CPU_SET(2 *(WORKERS_PER_MACHINE + CLIENTS_PER_MACHINE) + 2, &cpus_stats);
     pthread_attr_setaffinity_np(&attr, sizeof(cpu_set_t), &cpus_stats);
-    return pthread_create(&thread_arr[0], &attr, print_stats, NULL);
+    /*int ret = pthread_create(&thread_arr[0], &attr, print_stats, NULL);*/
+    int ret = pthread_create(thread_arr, &attr, print_stats, NULL);
+		/*if (ret != 0) {*/
+			/*errno = ret;*/
+			/*perror("pthread_create");*/
+			/*printf("ERROR: pthread_create() failed: %d\n", ret);*/
+			/*exit(EXIT_FAILURE);*/
+		/*}*/
+		return ret;
 }
 
 // pin a worker thread to a core
@@ -567,6 +576,7 @@ void setup_client_conenctions_and_spawn_stats_thread(int clt_gid, struct hrd_ctr
 {
     int i;
     int local_client_id = clt_gid % CLIENTS_PER_MACHINE;
+		/// Publish client QPs through memcached
     for (i = 0; i < CLIENT_UD_QPS; i++) {
         char clt_dgram_qp_name[HRD_QP_NAME_SIZE];
         sprintf(clt_dgram_qp_name, "client-dgram-%d-%d", clt_gid, i);

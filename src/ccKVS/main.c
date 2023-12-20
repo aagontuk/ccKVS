@@ -11,7 +11,7 @@ struct mica_op *local_req_region;
 struct client_stats c_stats[CLIENTS_PER_MACHINE];
 struct worker_stats w_stats[WORKERS_PER_MACHINE];
 atomic_char local_recv_flag[WORKERS_PER_MACHINE][CLIENTS_PER_MACHINE][64]; //false sharing problem -- fixed with padding
-struct remote_qp remote_wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM];
+struct remote_qp remote_wrkr_qp[WORKER_NUM_UD_QPS][WORKER_NUM]; // Number of worker per QP? Shouldn't be number of QP per worker?
 struct remote_qp remote_clt_qp[CLIENT_NUM][CLIENT_UD_QPS];
 atomic_char clt_needed_ah_ready, wrkr_needed_ah_ready;
 

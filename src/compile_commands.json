@@ -1,0 +1,15 @@
+[
+    {
+        "arguments": [
+            "gcc-6",
+            "-c",
+            "-O3",
+            "-I../../include/libhrd",
+            "-o",
+            "hrd_conn.o",
+            "hrd_conn.c"
+        ],
+        "directory": "/proj/sandstorm-PG0/ashfaq/ccKVS/src/libhrd",
+        "file": "hrd_conn.c"
+    }
+]

@@ -14,6 +14,7 @@ struct cache cache;
 
 //local (file) functions
 char* code_to_str(uint8_t code);
+char* opcode_to_str(uint8_t opcode);
 void cache_meta_aggregate(void);
 void cache_meta_reset(struct cache_meta_stats* meta);
 void extended_cache_meta_reset(struct extended_cache_meta_stats* meta);
@@ -1156,7 +1157,9 @@ int batch_from_trace_to_cache(int trace_iter, int thread_id, struct trace_comman
 	}
 	if ((ENABLE_HOT_KEY_TRACKING == 1) && (isSC == 0)) memset(hottest_keys_pointers, 0, sizeof(uint16_t) * HOTTEST_KEYS_TO_TRACK);
 //  green_printf("NEW BUFFER \n");
+  /*printf("Processing new batch from trace_iter %d\n", trace_iter);*/
 	while (i < CACHE_BATCH_SIZE && trace[trace_iter].opcode != NOP) {
+		/*printf("Processing: key -> %u, op ->  %s\n", trace[trace_iter].key_id, opcode_to_str(trace[trace_iter].opcode));*/
 
 		if ((ENABLE_HOT_KEY_TRACKING == 1) && (DISABLE_CACHE == 0)) {
 			if (trace[trace_iter].key_id < HOTTEST_KEYS_TO_TRACK) {
@@ -1470,6 +1473,27 @@ char* code_to_str(uint8_t code){
 			return "WRITE_REPLAY_STATE";
 		default: {
 			printf("Wrong code (%d)\n", code);
+			assert(0);
+		}
+	}
+}
+
+char* opcode_to_str(uint8_t opcode) {
+	switch(opcode) {
+		case HOT_READ:
+			return "HOT_READ";
+		case HOT_WRITE:
+			return "HOT_WRITE";
+		case REMOTE_READ:
+			return "REMOTE_READ";
+		case REMOTE_WRITE:
+			return "REMOTE_WRITE";
+		case LOCAL_READ:
+			return "LOCAL_READ";
+		case LOCAL_WRITE:
+			return "LOCAL_WRITE";
+		default: {
+			printf("Wrong opcode (%d)\n", opcode);
 			assert(0);
 		}
 	}

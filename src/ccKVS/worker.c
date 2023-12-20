@@ -14,6 +14,7 @@ void *run_worker(void *arg)
 	assert(MICA_MAX_BATCH_SIZE >= WORKER_MAX_BATCH);
 	assert(HERD_VALUE_SIZE <= MICA_MAX_VALUE);
 	assert(WORKER_SS_BATCH > WORKER_MAX_BATCH);	/* WORKER_MAX_BATCH check */
+	printf("spawned worker %d\n", wrkr_lid);
 
 	/* ---------------------------------------------------------------------------
 	------------Set up the KVS partition-----------------------------------------
@@ -175,12 +176,16 @@ void *run_worker(void *arg)
 		while (wr_i < WORKER_MAX_BATCH) {
 			struct mica_op *next_req_ptr;
 			uint32_t index = (pull_ptr[qp_i] + 1) % per_qp_buf_slots[qp_i];
+			// previous post recv will fill the req[] when send request is sent from the clinet for cache miss
+			// process those request
+			// if multiget, change with mica get and continue; otherwise no_cf_change
 			enum control_flow_directive cf = poll_remote_region(&qp_i, pull_ptr, per_qp_buf_slots, req[qp_i],
 																&multiget, wr_i, &received_messages, // TODO choose whether to break on wr_i or send_wr_i
 																per_qp_received_messages,
 																&next_req_ptr, &get_i, &get_num, requests_per_message);
 			if (cf == break_) break;
 			else if (cf == continue_) continue;
+			// Sending to remote clinet who sent the cache miss op
 			request_bookkeeping(multiget, pull_ptr, qp_i, per_qp_buf_slots, &next_req_ptr, &received_messages,
 								per_qp_received_messages, req[qp_i], &get_i, send_wr_i, wr, nb_tx_tot, // TODO make sure latency is not affected by send_wr_i
 								&clt_i, &index, send_qp_i, cb[0], wrkr_lid, push_ptr[qp_i], &last_measured_wr_i,
@@ -203,12 +208,14 @@ void *run_worker(void *arg)
 			w_stats[wrkr_lid].empty_polls_per_worker++;
 			continue; // no request was found, start over
 		}
+		// executing the cache request from the client
 		KVS_BATCH_OP(&kv, wr_i, op_ptr_arr, mica_resp_arr);
 
 
 		/* ---------------------------------------------------------------------------
 		------------------------------ POLL COMPLETIONS------------------------
 		---------------------------------------------------------------------------*/
+		// poll completions for the received requests from the client
 		poll_workers_recv_completions(per_qp_received_messages, received_messages, cb[0],
 									  wc, multiget, &debug_recv, wr_i,  wrkr_lid,  max_reqs);
 
@@ -216,6 +223,7 @@ void *run_worker(void *arg)
 		//if (w_stats[wrkr_lid].batches_per_worker == 0 || w_stats[wrkr_lid].batches_per_worker == MILLION)
 		//printf("Worker: %d Response %d bkt requested %llu \n", wrkr_lid, mica_resp_arr[0].type, op_ptr_arr[0]->key.bkt );
 		if ((ENABLE_WORKER_COALESCING == 1) &&  (ENABLE_ASSERTIONS == 1)) assert(send_wr_i == received_messages);
+		// Copy mica_resp to resp_buffer and set sgl[i].addr to response_buffer[i].value
 		append_responses_to_work_requests_and_delete_requests(wr_i, op_ptr_arr, wr,
 															  mica_resp_arr, &resp_buf_i,
 															  wrkr_lid, sgl, response_buffer, requests_per_message);
@@ -223,6 +231,7 @@ void *run_worker(void *arg)
 		/* ---------------------------------------------------------------------------
 		------------------------------ POST RECEIVES AND SENDS------------------------
 		---------------------------------------------------------------------------*/
+		/*printf("Worker posting recv %d send %d\n", per_qp_received_messages[0], send_wr_i);*/
 		worker_post_receives_and_sends(send_wr_i, cb[0], per_qp_received_messages, recv_wr, recv_sgl, push_ptr, qp_buf_base,
 									   per_qp_buf_slots, &debug_recv, clts_per_qp, wr, send_qp_i, wrkr_lid,
 									   last_measured_wr_i, wr_i);

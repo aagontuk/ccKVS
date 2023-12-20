@@ -588,7 +588,7 @@ static inline void issue_locals(uint16_t wn, uint16_t* ws, uint16_t local_client
 			//										latency_info->last_measured_op_i, local_measure->measured_local_region);
 		}
 		memcpy((struct mica_op*) local_req_region + offset, ops + op_i, size_of_op);
-		//		printf("op opcode %d local opcode %d, size_of op %d \n", ops[op_i].opcode, local_req_region[offset].opcode, size_of_op);
+		printf("op opcode %d local opcode %d, size_of op %d \n", ops[op_i].opcode, local_req_region[offset].opcode, size_of_op);
 		if (ENABLE_ASSERTIONS) assert(local_req_region[offset].opcode == MICA_OP_GET ||
 									  local_req_region[offset].opcode == MICA_OP_PUT);
 		if (ws[wn] % LOCAL_REGION_SIZE == LOCAL_REGION_SIZE - 1) {
@@ -627,6 +627,9 @@ static inline void send_credits(uint16_t credit_wr_i, struct ibv_sge* coh_recv_s
 	uint16_t i, j, recv_iter = 0;
 	struct ibv_recv_wr *bad_recv_wr;
 	struct ibv_send_wr *bad_send_wr;
+
+	// cache op receives from the broadcasts
+	// should be number of credits given to all the clients
 	for(i = 0; i < credit_wr_i; i++) {
 		for (j = 0; j < credits_in_message; j++) {
 			recv_iter = i * credits_in_message + j;
@@ -777,6 +780,9 @@ static inline uint16_t handle_cold_requests(struct extended_cache_op* ops, struc
 										  &op_i, next_op_i, stalled_ops_i, local_client_id, latency_info,
 										  hottest_keys_pointers);
 			else if (protocol == SEQUENTIAL_CONSISTENCY)
+				// set resp.type == empty if it isn't cache miss op and other ops
+				// copy ops to next_ops etc
+				// increment op_i
 				cache_hit_bookkeeping_SC(ops, next_ops, resp, next_resp, key_homes, next_key_homes,
 										 &op_i, next_op_i, local_client_id, latency_info,
 										 hottest_keys_pointers);
@@ -805,6 +811,7 @@ static inline uint16_t handle_cold_requests(struct extended_cache_op* ops, struc
 
 		/*------------------------------ LOCAL REQUESTS--------------------------------*/
 		if (rm_id == machine_id) {
+			// Copy op to local_req_region and set local_recv_flag
 			issue_locals(wn, ws, local_client_id, size_of_op, worker_id, per_worker_outstanding,
 						 remote_for_each_worker, ops, next_ops, resp, next_resp, key_homes, next_key_homes,
 						 op_i, next_op_i, local_worker_id, latency_info,
@@ -946,6 +953,7 @@ static inline void poll_coherence_SC(uint16_t *coh_i, struct ud_req *incoming_re
 		}
 		HRD_MOD_ADD(*pull_ptr, SC_CLT_BUF_SLOTS);
 		memcpy(update_ops + (*coh_i), &(incoming_reqs[*pull_ptr].m_op), HERD_PUT_REQ_SIZE);
+		mica_print_op(&incoming_reqs[*pull_ptr].m_op);
 		update_resp[*coh_i].type = EMPTY;
 		// if (machine_id == 0); yellow_printf("CLIENT %d: I RECEIVED Broadcast %d at offset %d for key with tag  %d \n",
 		// 		clt_gid, c_stats[local_client_id].received_updates_per_client,* pull_ptr, update_ops[*coh_i].key.tag);
@@ -956,18 +964,22 @@ static inline void poll_coherence_SC(uint16_t *coh_i, struct ud_req *incoming_re
 }
 
 // Create credit messages for SC
+// Check how many broadcasts we have seen from each machine
+// If we have seen enough broadcasts from a given machine send credits
 static inline uint16_t create_credits_SC(uint16_t coh_i, struct ibv_wc *coh_wc, uint8_t *broadcasts_seen,
 										 uint16_t local_client_id,
 										 struct ibv_send_wr *credit_send_wr, long long *credit_tx,
 										 struct ibv_cq *credit_send_cq)
 {
 	uint16_t i, credit_wr_i = 0;
+	uint8_t b_seen[MACHINE_NUM] = {0};
 	struct ibv_wc signal_send_wc;
 	for (i = 0; i < coh_i; i++) {
 		if (ENABLE_ASSERTIONS) assert(i < SC_MAX_COH_RECEIVES);
 		uint16_t rm_id = coh_wc[i].imm_data;
 		if (ENABLE_ASSERTIONS) assert(rm_id < MACHINE_NUM);
 		broadcasts_seen[rm_id]++;
+		b_seen[rm_id]++;
 		// yellow_printf("seen update from machine %d\n", rm_id);
 		// If we have seen enough broadcasts from a given machine send credits
 		if (broadcasts_seen[rm_id] == SC_CREDITS_IN_MESSAGE) {
@@ -989,6 +1001,11 @@ static inline uint16_t create_credits_SC(uint16_t coh_i, struct ibv_wc *coh_wc, 
 			(*credit_tx)++;
 		}
 	}
+	
+	//for (i = 0; i < MACHINE_NUM; i++) {
+		//printf("Client %d: I have seen %d broadcasts from machine %d\n", local_client_id, b_seen[i], i);
+	//}
+
 	return credit_wr_i;
 }
 
@@ -1045,6 +1062,7 @@ static inline void perform_broadcasts_SC(struct extended_cache_op *ops, uint8_t 
 			continue; // We only care about hot writes
 		}
 		if (!check_broadcast_credits(credits, cb, credit_wc, credit_debug_cnt, SC_UPD_VC, protocol)) {
+			//printf("client %d: Not enough credits for broadcast\n", local_client_id);
 			break;
 		}
 		forge_bcast_wrs_SC(op_i, ops, cb, coh_send_sgl, coh_send_wr, coh_buf, coh_buf_i, br_tx, local_client_id, br_i);
@@ -1054,10 +1072,12 @@ static inline void perform_broadcasts_SC(struct extended_cache_op *ops, uint8_t 
 		op_i++;
 		if ((*br_tx) % SC_CREDITS_IN_MESSAGE == 0) credit_recv_counter++;
 		if (br_i == MAX_BCAST_BATCH) {
+			//printf("Client %d: I am sending %d broadcasts \n", local_client_id, br_i);
 			post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
 			br_i = 0;
 		}
 	}
+	//printf("Client %d: I am sending %d broadcasts \n", local_client_id, br_i);
 	post_credit_recvs_and_batch_bcasts_to_NIC(br_i, cb, coh_send_wr, credit_recv_wr, &credit_recv_counter, protocol);
 }
 
@@ -1801,6 +1821,7 @@ static inline void worker_post_receives_and_sends(uint16_t nb_new_req_tot, struc
 	// Send the batch to the NIC
 	if (nb_new_req_tot > 0) {
 		wr[nb_new_req_tot - 1].next = NULL;
+		//printf("worker nb_new_req_tot: %d\n", nb_new_req_tot);
 		ret = ibv_post_send(cb->dgram_qp[send_qp_i], &wr[0], &bad_send_wr);
 		CPE(ret, "worker ibv_post_send error", ret);
 		//		green_printf("Sending %d responses through qp %d\n", nb_new_req_tot, send_qp_i);

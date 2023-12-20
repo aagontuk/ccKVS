@@ -9,12 +9,12 @@
 //-------------------------------------------
 /* ----------SYSTEM------------------------ */
 //-------------------------------------------
-#define TOTAL_CORES 40
+#define TOTAL_CORES 32
 #define TOTAL_CORES_ (TOTAL_CORES - 1)
 #define SOCKET_NUM 2
-#define PHYSICAL_CORES_PER_SOCKET 10
+#define PHYSICAL_CORES_PER_SOCKET 8
 #define PHYSICAL_CORE_DISTANCE 4 // distance between two physical cores of the same socket
-#define VIRTUAL_CORES_PER_SOCKET 20
+#define VIRTUAL_CORES_PER_SOCKET 16
 #define WORKER_HYPERTHREADING 1
 #define MAX_SERVER_PORTS 1 // better not change that
 
@@ -23,6 +23,7 @@
 #define CLIENTS_PER_MACHINE 10
 #define MACHINE_NUM 3
 
+// Use socket 1 if number of worker is >= 8
 #define CACHE_SOCKET (WORKERS_PER_MACHINE < 8 ? 0 : 1 )// socket where the cache is bind
 
 #define CLIENT_NUM (CLIENTS_PER_MACHINE * MACHINE_NUM)
@@ -39,12 +40,12 @@
 #define ENABLE_STATIC_LOCAL_ALLOCATION 1 // in crcw statically allocate clients to workers for the local requests
 #define DISABLE_LOCALS 1
 #define ENABLE_LOCAL_WORKERS_ 0 // this seems to help
-#define ENABLE_LOCAL_WORKERS ((ENABLE_WORKERS_CRCW == 1 && DISABLE_LOCALS == 0) ? ENABLE_LOCAL_WORKERS_ : 0)
+#define ENABLE_LOCAL_WORKERS ((ENABLE_WORKERS_CRCW == 1 && DISABLE_LOCALS == 0) ? ENABLE_LOCAL_WORKERS_ : 0) // 0
 #define LOCAL_WORKERS 1 // number of workers that are only spawned for local requests
 #define ACTIVE_WORKERS_PER_MACHINE ((ENABLE_LOCAL_WORKERS == 1) && (DISABLE_LOCALS == 0) ? (WORKERS_PER_MACHINE - LOCAL_WORKERS) : WORKERS_PER_MACHINE)
 #define ENABLE_HUGE_PAGES_FOR_WORKER_REQUEST_REGION 0 // it appears enabling this brings some inconsistencies in performance
 
-#define ENABLE_CACHE_STATS 0
+#define ENABLE_CACHE_STATS 1
 #define EXIT_ON_PRINT 0
 #define PRINT_NUM 4
 #define DUMP_STATS_2_FILE 0
@@ -80,7 +81,7 @@
 //-----CLIENT-------
 
 #define ENABLE_THREAD_PARTITIONING_C_TO_W_ 1
-#define ENABLE_THREAD_PARTITIONING_C_TO_W (ENABLE_WORKERS_CRCW == 1 ? ENABLE_THREAD_PARTITIONING_C_TO_W_ : 0)
+#define ENABLE_THREAD_PARTITIONING_C_TO_W (ENABLE_WORKERS_CRCW == 1 ? ENABLE_THREAD_PARTITIONING_C_TO_W_ : 0) // 1
 #define BALANCE_REQS_ 0 //
 #define BALANCE_REQS  (((ENABLE_WORKERS_CRCW == 1) && (ENABLE_THREAD_PARTITIONING_C_TO_W == 0)) ? BALANCE_REQS_ : 0) //
 
@@ -115,7 +116,7 @@
 
 
 // INLINING
-#define CLIENT_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (MULTIGET_AVAILABLE_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
+#define CLIENT_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (MULTIGET_AVAILABLE_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1) // 0
 #define WORKER_RESPONSE_MAX_SIZE (ENABLE_WORKER_COALESCING == 1 ? (MAX_COALESCE_PER_MACH * HERD_VALUE_SIZE) : HERD_VALUE_SIZE)
 #define WORKER_ENABLE_INLINING (((USE_BIG_OBJECTS == 1) || (WORKER_RESPONSE_MAX_SIZE > MAXIMUM_INLINE_SIZE)) ?  0 : 1)
 
@@ -128,9 +129,9 @@
 /*-------------------------------------------------
 -----------------DEBUGGING-------------------------
 --------------------------------------------------*/
-#define ENABLE_SS_DEBUGGING 0 // first thing to open in a deadlock
+#define ENABLE_SS_DEBUGGING 1 // first thing to open in a deadlock
 #define ENABLE_ASSERTIONS 1
-#define ENABLE_STAT_COUNTING 1
+#define ENABLE_STAT_COUNTING 0
 #define MEASURE_LATENCY 0
 #define REMOTE_LATENCY_MARK 100 // mark a remote request for measurement by attaching this to the imm_data of the wr
 #define ENABLE_WINDOW_STATS 0
@@ -144,7 +145,7 @@
 #define CLIENT_SL 0 //service level for the clients
 #define WORKER_SL 0 // service level for the workers
 #define VERBOSE_DEBUG 0
-#define STALLING_DEBUG_LIN 0 // prints information about the stalled ops, check debug_stalling_LIN()
+#define STALLING_DEBUG_LIN 1 // prints information about the stalled ops, check debug_stalling_LIN()
 #define DEBUG_COALESCING 0
 #define DEBUG_WORKER_RECVS 0
 
@@ -185,12 +186,12 @@
 #define MAX_BCAST_BATCH (ENABLE_MULTICAST == 1 ? 4 : 4) //8 //(128 / (MACHINE_NUM - 1)) // how many broadcasts can fit in a batch
 #define MESSAGES_IN_BCAST (ENABLE_MULTICAST == 1 ? 1 : (MACHINE_NUM - 1))
 #define MESSAGES_IN_BCAST_BATCH MAX_BCAST_BATCH * MESSAGES_IN_BCAST //must be smaller than the q_depth
-#define BCAST_TO_CACHE_BATCH 90 //100 // helps to keep small //47 for SC
+#define BCAST_TO_CACHE_BATCH 47 //100 // helps to keep small //47 for SC
 
 //----------SC flow control-----------------
-#define SC_CREDITS 30 //experiments with 33
-#define SC_CREDIT_DIVIDER 2 /*This is actually useful in high write ratios TODO tweak this*/
-#define SC_CREDITS_IN_MESSAGE (SC_CREDITS / SC_CREDIT_DIVIDER)
+#define SC_CREDITS 33 //experiments with 33
+#define SC_CREDIT_DIVIDER 1 /*This is actually useful in high write ratios TODO tweak this*/
+#define SC_CREDITS_IN_MESSAGE (SC_CREDITS / SC_CREDIT_DIVIDER) // how many credits exist in a single message
 #define SC_MAX_CREDIT_WRS ((SC_CREDITS / SC_CREDITS_IN_MESSAGE) * (MACHINE_NUM - 1))
 #define SC_MAX_COH_MESSAGES (SC_CREDITS * (MACHINE_NUM - 1))
 #define SC_MAX_COH_RECEIVES (SC_CREDITS * (MACHINE_NUM - 1))
@@ -200,7 +201,7 @@
 
 
 //----------LIN flow control-----------------
-#define CREDITS_FOR_EACH_CLIENT 60 //30
+#define CREDITS_FOR_EACH_CLIENT 30 //30
 #define UPD_CREDITS (CREDITS_FOR_EACH_CLIENT)
 #define ACK_CREDITS (CREDITS_FOR_EACH_CLIENT)
 #define INV_CREDITS (CREDITS_FOR_EACH_CLIENT)
@@ -209,7 +210,7 @@
 #define ACK_VC 0
 #define INV_VC 1
 #define UPD_VC 2
-#define LIN_CREDIT_DIVIDER 2 //1 /// this  has the potential to cause deadlocks //  =take care that this can be a big part of the network traffic
+#define LIN_CREDIT_DIVIDER 1 //1 /// this  has the potential to cause deadlocks //  =take care that this can be a big part of the network traffic
 #define CREDITS_IN_MESSAGE (CREDITS_FOR_EACH_CLIENT / LIN_CREDIT_DIVIDER) /* How many credits exist in a single back-pressure message- seems to be working with / 3*/
 #define MAX_CREDIT_WRS ((BROADCAST_CREDITS / CREDITS_IN_MESSAGE) * (MACHINE_NUM - 1))
 #define MAX_COH_MESSAGES ((MACHINE_NUM - 1) * BROADCAST_CREDITS)

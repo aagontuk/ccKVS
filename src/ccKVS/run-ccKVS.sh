@@ -10,6 +10,8 @@ export MLX5_SCATTER_TO_CQE=1
 # Setting up a unique machine id via a list of all ip addresses
 machine_id=-1
 allIPs=(10.10.1.1 10.10.1.2 10.10.1.3 10.10.1.4 10.10.1.5 10.10.1.6 10.10.1.7 10.10.1.8 10.10.1.9)
+#allIPs=(10.10.1.4 10.10.1.2 10.10.1.5)
+#allIPs=(10.10.1.4 10.10.1.2)
 #localIP=$(ip addr | grep 'state UP' -A2 | sed -n 3p | awk '{print $2}' | cut -f1  -d'/')
 localIP=$(cat /etc/hosts | grep $(hostname | cut -d . -f 1) | awk '{print $1}')
 for i in "${!allIPs[@]}"; do
@@ -57,7 +59,9 @@ shm-rm.sh 1>/dev/null 2>/dev/null
 blue "Reset server QP registry"
 sudo killall memcached
 sudo killall ccKVS-sc
-memcached -l 0.0.0.0 1>/dev/null 2>/dev/null &
+if [ "$localIP" == "$MEMCACHED_IP" ]; then
+	memcached -l $MEMCACHED_IP 1>/dev/null 2>/dev/null &
+fi
 sleep 1
 
 blue "Running client and worker threads"
@@ -66,3 +70,17 @@ sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
 	--machine-id $machine_id \
 	--is-roce $is_RoCE \
 	2>&1
+
+#if [ "$localIP" == "10.10.1.5" ]; then
+	#sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
+		#gdb --args ./${executable} \
+		#--machine-id $machine_id \
+		#--is-roce $is_RoCE \
+		#2>&1
+#else
+	#sudo LD_LIBRARY_PATH=/usr/local/lib/ -E \
+		#./${executable} \
+		#--machine-id $machine_id \
+		#--is-roce $is_RoCE \
+		#2>&1
+#fi

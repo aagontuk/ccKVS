@@ -1,9 +1,9 @@
 LD      := gcc-6
-LDFLAGS := -O3 -std=gnu11 -flto -lgsl -lgslcblas -libverbs -lrt -lpthread -lmemcached -lnuma -lrdmacm
 CC  = gcc-6
-CFLAGS   = -O3 -std=gnu11  -I../../include/mica -I../../include/libhrd -I../../include/ccKVS -I../../include/optik
 APPS    := ccKVS-sc ccKVS-lin clean-o
 PROF    := -g -fno-omit-frame-pointer
+CFLAGS   = -O3 -std=gnu11  -I../../include/mica -I../../include/libhrd -I../../include/ccKVS -I../../include/optik ${PROF}
+LDFLAGS := -O3 -std=gnu11 -flto -lgsl -lgslcblas -libverbs -lrt -lpthread -lmemcached -lnuma -lrdmacm ${PROF}
 
 all: ${APPS}
 

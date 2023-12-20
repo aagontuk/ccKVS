@@ -46,7 +46,7 @@
  * 2: Pretty print GET/PUT operations
  */
 
-#define MICA_DEBUG 0
+#define MICA_DEBUG 1
 
 
 struct mica_resp {

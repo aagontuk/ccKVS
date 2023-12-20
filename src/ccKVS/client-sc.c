@@ -9,6 +9,7 @@ void *run_client(void *arg)
     uint16_t local_client_id = (uint16_t) (clt_gid % CLIENTS_PER_MACHINE);
     uint16_t worker_qp_i = (uint16_t) ((local_client_id + machine_id) % WORKER_NUM_UD_QPS);
     uint16_t local_worker_id = (uint16_t) ((clt_gid % LOCAL_WORKERS) + ACTIVE_WORKERS_PER_MACHINE); // relevant only if local workers are enabled
+		printf("spawned clinet [%d, %d]\n", clt_gid, local_client_id);
     if (local_client_id == 0 && machine_id == 0)
         cyan_printf("Size of worker req: %d, extra bytes: %d, ud req size: %d minimum worker req size %d, actual size of req_size %d  \n",
                     WORKER_REQ_SIZE, EXTRA_WORKER_REQ_BYTES, UD_REQ_SIZE, MINIMUM_WORKER_REQ_SIZE, sizeof(struct wrkr_ud_req));
@@ -17,6 +18,7 @@ void *run_client(void *arg)
     uint16_t remote_buf_size =  ENABLE_WORKER_COALESCING == 1 ?
                                 (GRH_SIZE + sizeof(struct wrkr_coalesce_mica_op)) : UD_REQ_SIZE ;
 //    printf("Remote clients buffer size %d\n", remote_buf_size);
+    // Create cq, pd, qp, mem_reg
     setup_queue_depths(&recv_q_depths, &send_q_depths, protocol);
     struct hrd_ctrl_blk *cb = hrd_ctrl_blk_init(clt_gid,	/* local_hid */
                                                 0, -1, /* port_index, numa_node_id */
@@ -27,6 +29,7 @@ void *run_client(void *arg)
                                                 recv_q_depths, send_q_depths); /* Depth of the dgram RECV Q*/
 
     int push_ptr = 0, pull_ptr = -1;
+		// incoming request ptr at the end of datagram_buf
     struct ud_req *incoming_reqs = (struct ud_req *)(cb->dgram_buf + remote_buf_size);
 //    printf("dgram pointer %llu, incoming req ptr %llu \n", cb->dgram_buf, incoming_reqs);
 
@@ -44,11 +47,14 @@ void *run_client(void *arg)
 
     /* Fill the RECV queue that receives the Broadcasts, we need to do this early */
     if (WRITE_RATIO > 0 && DISABLE_CACHE == 0)
+        /// ibp_post_recv for each servers
         post_coh_recvs(cb, &push_ptr, mcast, protocol, (void*)incoming_reqs);
 
     /* -----------------------------------------------------
     --------------CONNECT WITH WORKERS AND CLIENTS-----------------------
     ---------------------------------------------------------*/
+		/// Discover other workers and clients and setup AH
+		/// What do they mean by remote workers and remote client?
     setup_client_conenctions_and_spawn_stats_thread(clt_gid, cb);
     if (MULTICAST_TESTING == 1) multicast_testing(mcast, clt_gid, cb);
     /* -----------------------------------------------------
@@ -92,6 +98,15 @@ void *run_client(void *arg)
     struct ibv_mr *ops_mr, *coh_mr;
     struct extended_cache_op *ops, *next_ops, *third_ops;
 
+		/*
+		 * Allocate buffers for operations and responses
+		 *
+		 * ops: Array of size OPS_BUFS_NUM * CACHE_BATCH_SIZE
+		 * next_ops: points to ops + CACHE_BATCH_SIZE
+		 * third_ops: points to ops + 2 * CACHE_BATCH_SIZE; Only used when clinet inline is off
+		 *
+		 * Same for response
+		 */
     setup_ops(&ops, &next_ops, &third_ops, &resp, &next_resp, &third_resp,
               &key_homes, &next_key_homes, &third_key_homes);
     setup_coh_ops(&update_ops, NULL, NULL, NULL, update_resp, NULL, &coh_buf, protocol);
@@ -104,6 +119,7 @@ void *run_client(void *arg)
     ------------------------------INITIALIZE STATIC STRUCTUREs--------------------
         ---------------------------------------------------------------------------*/
     // SEND AND RECEIVE WRs
+		// Only setup the work requests doesn't post
     setup_remote_WRs(rem_send_wr, rem_send_sgl, rem_recv_wr, &rem_recv_sgl, cb, clt_gid, ops_mr, protocol);
     if (WRITE_RATIO > 0 && DISABLE_CACHE == 0) {
         setup_credits(credits, credit_send_wr, &credit_send_sgl, credit_recv_wr, &credit_recv_sgl, cb, protocol);
@@ -118,6 +134,7 @@ void *run_client(void *arg)
     ------------------------------Prepost RECVS-----------------------------------
     ---------------------------------------------------------------------------*/
     /* Remote Requests */
+		// post remote recv requests
     for(i = 0; i < WINDOW_SIZE; i++) /// Warning: take care that coalesced worker responses do not overwrite coherence
         hrd_post_dgram_recv(cb->dgram_qp[REMOTE_UD_QP_ID],
                             (void *) cb->dgram_buf, remote_buf_size, cb->dgram_buf_mr->lkey);
@@ -135,6 +152,9 @@ void *run_client(void *arg)
         swap_ops(&ops, &next_ops, &third_ops,
                  &resp, &next_resp, &third_resp,
                  &key_homes, &next_key_homes, &third_key_homes);
+
+				// credit_debug_cnt: number of times client isn't provided with credits
+				// Client is asking for credits to broadcast but can't get any
         if (credit_debug_cnt > M_1) {
             red_printf("Client %d misses credits \n", clt_gid);
             // exit(0);
@@ -145,42 +165,58 @@ void *run_client(void *arg)
         ------------------------------Refill REMOTE  RECVS--------------------------------
         ---------------------------------------------------------------------------*/
 
+				// Post remote recv requests
         refill_recvs(rem_req_i, rem_recv_wr, cb);
 
         /* ---------------------------------------------------------------------------
         ------------------------------ POLL BROADCAST REGION--------------------------
+				Poll coherence requests from other clients and fill up the cache
         ---------------------------------------------------------------------------*/
         coh_i = 0;
         if (WRITE_RATIO > 0 && DISABLE_CACHE == 0) {
+					  // Polling for coherence requests from other clinets
+						// recv's where posterd earlier in the code with incoming_req
+						// Only expects CACHE_OP_UPD
+						// Fills up update_ops from incoming_reqs and clear incoming_reqs
             poll_coherence_SC(&coh_i, incoming_reqs, &pull_ptr, update_ops, update_resp, clt_gid, local_client_id);
+						/*printf("client [%d,%d]: got %d coherence messages\n", clt_gid, local_client_id, coh_i);*/
 
             // poll recv completions-send credits and post new receives
             if (coh_i > 0) {
-                // poll for the receive completions for the coherence messages that were just polled
+                // poll for receive completions for the coherence messages that were just polled
                 hrd_poll_cq(coh_recv_cq, coh_i, coh_wc);
                 // create the appropriate amount of credits to send back
                 credit_wr_i = create_credits_SC(coh_i, coh_wc, broadcasts_seen, local_client_id,
                                                 credit_send_wr, &credit_tx, cb->dgram_send_cq[FC_UD_QP_ID]);
+								/*printf("client [%d,%d]: sending %d credits\n", clt_gid, local_client_id, credit_wr_i * SC_CREDITS_IN_MESSAGE);*/
                 // send back the created credits  and post the corresponding receives for the new messages
                 if (credit_wr_i > 0)
                     send_credits(credit_wr_i, coh_recv_sgl, cb, &push_ptr, coh_recv_wr, coh_recv_qp,
                                  credit_send_wr,  (uint16_t)SC_CREDITS_IN_MESSAGE, (uint32_t)SC_CLT_BUF_SLOTS,
                                  (void*)incoming_reqs);
-                // push the new coherence messages to the CACHES
+                // push the new coherence messages to the local cache
                 cache_batch_op_sc_with_cache_op(coh_i, local_client_id, &update_ops, update_resp);
             }
         }
         /* ---------------------------------------------------------------------------
         ------------------------------PROBE THE CACHE--------------------------------------
         ---------------------------------------------------------------------------*/
+				// Process CACHE_BATCH_SIZE=600 requests from the traces
+				// Fill up the ops from the traces
+				// Serverice request from the cache
+				// set resp.type = EMPTY if success or resp.type = CACHE_MISS if not found in the cache
+				// If ops[i].opcode = CACHE_OP_PUT then set ops[i].opcode = CACHE_OP_BRC to broadcast to all clients to update chache
+				// Why CACHE_OP_UPDATE isn't broadcast? Isn't other caches will be stale for update?
+				// Who sets CACHE_OP_UPDATE, this only sets CACHE_OP_GET and CACHE_OP_PUT
         trace_iter = batch_from_trace_to_cache(trace_iter, local_client_id, trace, ops, resp,
-                                               key_homes, 0, next_op_i, &latency_info, &start,
+                                               key_homes, 0, next_op_i, &latency_info, &start, // key_home, isSC
                                                hottest_keys_pointers);
 
         /* ---------------------------------------------------------------------------
         ------------------------------BROADCASTS--------------------------------------
         ---------------------------------------------------------------------------*/
         if (WRITE_RATIO > 0 && DISABLE_CACHE == 0) {
+						// Broadcast puts (4 at a time) to all the clients
             perform_broadcasts_SC(ops, credits, cb, credit_wc,
                                   &credit_debug_cnt, coh_send_sgl, coh_send_wr,
                                   coh_buf, &coh_buf_i, &br_tx, credit_recv_wr,
@@ -190,7 +226,7 @@ void *run_client(void *arg)
         /* ---------------------------------------------------------------------------
         ------------------------------ REMOTE & LOCAL REQUESTS------------------------
         ---------------------------------------------------------------------------*/
-        previous_wr_i = wr_i;
+        previous_wr_i = wr_i; // save work request from last loop that were sent
         wr_i = 0;
         prev_rem_req_i = rem_req_i;
         rem_req_i = 0; next_op_i = 0;
@@ -203,6 +239,10 @@ void *run_client(void *arg)
         else memset(per_worker_outstanding, 0, WORKER_NUM);
 
         // Create the Remote Requests
+				// Requests for those resp.type == CACHE_MISS
+				// Empty resp if it isn't resp.type == CACHE_MISS else mark as UNSERVED_CACHE_MISS
+				// For UNSERVED_CACHE_MISS find worker id, if woker is local setup to serve locally otherwise
+				// setup send for remote worker and empty resp
         wr_i = handle_cold_requests(ops, next_ops, resp,
                                     next_resp, key_homes, next_key_homes,
                                     &rem_req_i, &next_op_i, cb, rem_send_wr,

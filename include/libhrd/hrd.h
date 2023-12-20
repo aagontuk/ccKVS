@@ -66,13 +66,13 @@
 #define GRH_SIZE 40 // GLobal Routing Header
 #define MICA_OP_SIZE (USE_BIG_OBJECTS == 1 ? (64 + (EXTRA_CACHE_LINES * 64)) : 64)
 //#define CACHE_OP_SIZE //MICA_OP_SIZE
-#define UD_REQ_SIZE (MICA_OP_SIZE + GRH_SIZE) // Buffer slot size required for a UD request
+#define UD_REQ_SIZE (MICA_OP_SIZE + GRH_SIZE) // Buffer slot size required for a UD request // 64 + 40
 
 
 
 #define ENABLE_COALESCING 1
 #define ENABLE_WORKER_COALESCING_ (USE_BIG_OBJECTS == 0 ? 1 : 0)
-#define ENABLE_WORKER_COALESCING (ENABLE_COALESCING == 1 ? ENABLE_WORKER_COALESCING_ : 0)
+#define ENABLE_WORKER_COALESCING (ENABLE_COALESCING == 1 ? ENABLE_WORKER_COALESCING_ : 0) // 1
 
 
 #define DESIRED_COALESCING_FACTOR 32
@@ -81,8 +81,8 @@
 #define WRKR_COALESCING_BUF_SLOT_SIZE_ (DESIRED_COALESCING_FACTOR * HERD_VALUE_SIZE)
 #define WRKR_COALESCING_BUF_SLOT_SIZE (ENABLE_WORKER_COALESCING == 1 ? WRKR_COALESCING_BUF_SLOT_SIZE_ : HERD_VALUE_SIZE)
 
-#define MINIMUM_WORKER_REQ_SIZE ((DESIRED_COALESCING_FACTOR * HERD_GET_REQ_SIZE) + 1) + GRH_SIZE
-#define EXTRA_WORKER_REQ_BYTES_ (MINIMUM_WORKER_REQ_SIZE <= UD_REQ_SIZE ? 0 : MINIMUM_WORKER_REQ_SIZE - UD_REQ_SIZE)
+#define MINIMUM_WORKER_REQ_SIZE ((DESIRED_COALESCING_FACTOR * HERD_GET_REQ_SIZE) + 1) + GRH_SIZE // (32 * 17) + 1 + 40
+#define EXTRA_WORKER_REQ_BYTES_ (MINIMUM_WORKER_REQ_SIZE <= UD_REQ_SIZE ? 0 : MINIMUM_WORKER_REQ_SIZE - UD_REQ_SIZE) // (32 * 17)+1+40-64-40 = 481
 #define EXTRA_WORKER_REQ_BYTES (ENABLE_COALESCING == 1 ? EXTRA_WORKER_REQ_BYTES_ : 0)
 
 
@@ -256,14 +256,16 @@ hrd_poll_cq(struct ibv_cq *cq, int num_comps, struct ibv_wc *wc)
 {
 	int comps = 0;
 	uint32_t debug_cnt = 0;
+	//printf("hrd_poll_cq -> num_comps: %d\n", num_comps);
 	while(comps < num_comps) {
 		if (debug_cnt > M_256) {
 			printf("Someone is stuck waiting for a completion %d / %d  \n", comps, num_comps );
 			debug_cnt = 0;
+			//assert(false);
 		}
 		int new_comps = ibv_poll_cq(cq, num_comps - comps, &wc[comps]);
 		if(new_comps != 0) {
-			// printf("I see completions %d\n", new_comps);
+			//printf("I see completions %d\n", new_comps);
 			/* Ideally, we should check from comps -> new_comps - 1 */
 			if(wc[comps].status != 0) {
 				fprintf(stderr, "Bad wc status %d\n", wc[comps].status);
