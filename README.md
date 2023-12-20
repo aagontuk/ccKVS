@@ -31,27 +31,42 @@ Protocols are implemented efficiently on top of RDMA, offering:
     * **Sequential Consistency** (SC --> 1rtt): 1) Broadcast Updates* 
     * *along with logical (Lamport) clocks
 
-## Requirments
+## Testbed
 
-### Dependencies
-1. numactl
-1. libgsl0-dev
-1. libnuma-dev
-1. libatmomic_ops
-1. libmemcached-dev
-1. MLNX_OFED_LINUX-4.1-1.0.2.0
+* Cloudlab machine c6220 with 9 cluster setup.
+* Ubuntu 18.04
 
-### Settings
-1. Run subnet-manager in one of the nodes: '/etc/init.d/opensmd start'
-1. On every node apply the following:
- 1. echo 8192 | tee /sys/devices/system/node/node0/hugepages/hugepages-2048kB/nr_hugepages /sys/devices/system/node/node1/hugepages/hugepages-2048kB/nr_hugepages > /dev/null
- 1. echo 10000000001 | tee /proc/sys/kernel/shmmax /proc/sys/kernel/shmall > /dev/null
- * Make sure that the changes have been applied using cat on the above files
- * The following changes are temporary (i.e. need to be performed after a reboot)
+## How to run
 
-## Tested on
-* Infiniband cluster of 9 inter-connected nodes, via a Mellanox MSX6012F-BS switch, each one equiped with a single-port 56Gb Infiniband NIC (Mellanox MCX455A-FCAT PCIe-gen3 x16).
-* OS: Ubuntu 14.04 (Kernel: 3.13.0-32-generic) 
+* To setup the whole cluster, in one of the machines run:
+
+```sh
+$ cd bin
+$ ./deploy.sh -s
+```
+
+* Adjust [run-ccKVS.sh](https://github.com/aagontuk/ccKVS/blob/master/src/ccKVS/run-ccKVS.sh) with correct IP addresses for the nodes. Set `MEMCACHED_IP` with one of the nodes IP.
+
+* Build ccKVS in common shared directory:
+
+```sh
+cd /proj/sandstorm-PG0/ashfaq/ccKVS/src
+make
+```
+
+* Generate trace file with [trace-generator](https://github.com/akatsarakis/trace-generator).
+
+* Use [trace-splitter](https://github.com/aagontuk/ccKVS/blob/master/traces/trace-splitter.py) to split the trace for each client and keep the traces in /proj/sandstorm-PG0/ashfaq/ccKVS/traces/current-splited-traces. Example for 3 machine setup:
+
+```sh
+cat trace_w_10000000_k_1000000_c_250000_s_3_r_0.05_a_0.99_i_10.txt | ./trace-splitter.py -s 3 -c 10 -w 10 -k 100000 -C 250000 -o ./current-splited-traces/
+```
+
+* Run ccKVS in each node with following command:
+
+```sh
+rm -rf ~/ccKVS; cp -r /proj/sandstorm-PG0/ashfaq/ccKVS ~/ccKVS; cd ~/ccKVS/src/ccKVS/; ./run-ccKVS.sh
+```
 
 ## Acknowledgments
 1. ccKVS is based on [HERD/MICA](https://github.com/efficient/rdma_bench/tree/master/herd "HERD repo") design as an underlying KVS, the code of which we have adapted to implement both our underlying KVS and our (symmetric) caches.
